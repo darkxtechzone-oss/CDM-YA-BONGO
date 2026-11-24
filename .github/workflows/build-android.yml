@@ -54,13 +54,17 @@ jobs:
           EOT
           cat /root/.config/godot/editor_settings-3.tres
 
-      - name: Export debug APK
+      - name: Export APK (release, fallback debug)
         run: |
           export HOME=/root
           mkdir -p build/android
-          timeout 600 godot -v --export-debug "Android" build/android/arena-4v4.apk < /dev/null > export.log 2>&1
-          echo "godot exit code: $?" >> export.log
-          tail -n 100 export.log
+          timeout 600 godot -v --export "Android" build/android/arena-4v4.apk < /dev/null > export.log 2>&1
+          echo "release exit code: $?" >> export.log
+          if [ ! -f build/android/arena-4v4.apk ]; then
+            echo "=== release failed, trying debug ===" >> export.log
+            timeout 600 godot -v --export-debug "Android" build/android/arena-4v4.apk < /dev/null >> export.log 2>&1
+          fi
+          tail -n 60 export.log
           ls -la build/android
           test -f build/android/arena-4v4.apk
 
