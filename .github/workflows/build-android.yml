@@ -3,14 +3,12 @@ name: Build Android APK
 
 on:
   push:
-    branches:
-      - main
-      - master
+    branches: [main, master]
   workflow_dispatch:
 
 jobs:
   export-android:
-    name: Export Android APK
+    name: Android APK Builder
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -21,59 +19,154 @@ jobs:
       - name: Checkout Project
         uses: actions/checkout@v4
 
-      - name: Check Project Files
-        run: |
-          echo "Checking Godot project..."
-          test -f project.godot
-          test -f export_presets.cfg
-          godot --version
-
-      - name: Import Project
-        run: |
-          mkdir -p build/android
-          HOME=/root godot --headless --editor --path . --quit
-
-      - name: Export Android APK
+      - name: Diagnose and Export APK
+        id: build
+        shell: bash
         run: |
           set +e
 
-          HOME=/root godot \
-            --headless \
-            --path . \
+          LOG="$GITHUB_WORKSPACE/build-report.log"
+          SUMMARY="$GITHUB_STEP_SUMMARY"
+
+          touch "$LOG"
+
+          report_error() {
+            TITLE="$1"
+            MESSAGE="$2"
+
+            echo "::error title=$TITLE::$MESSAGE"
+
+            {
+              echo "## ❌ BUILD FAILED"
+              echo ""
+              echo "**Error:** $TITLE"
+              echo ""
+              echo "$MESSAGE"
+              echo ""
+              echo "### Diagnostic log"
+              echo '```text'
+              tail -n 100 "$LOG"
+              echo '```'
+            } >> "$SUMMARY"
+
+            echo ""
+            echo "========== BUILD ERROR =========="
+            echo "$TITLE"
+            echo "$MESSAGE"
+            echo "================================="
+
+            exit 1
+          }
+
+          echo "===== GODOT ANDROID BUILD REPORT =====" | tee -a "$LOG"
+
+          echo "1. Checking Godot version..." | tee -a "$LOG"
+          godot --version 2>&1 | tee -a "$LOG"
+
+          echo "2. Searching for project.godot..." | tee -a "$LOG"
+
+          PROJECT_FILE=$(find . -type f -name project.godot \
+            -not -path './.git/*' | head -n 1)
+
+          if [ -z "$PROJECT_FILE" ]; then
+            find . -maxdepth 4 -type f | tee -a "$LOG"
+            report_error "PROJECT FILE MISSING" \
+              "project.godot was not found. Check your uploaded project."
+          fi
+
+          PROJECT_DIR=$(dirname "$PROJECT_FILE")
+
+          echo "Project found: $PROJECT_FILE" | tee -a "$LOG"
+
+          echo "3. Checking export_presets.cfg..." | tee -a "$LOG"
+
+          PRESET="$PROJECT_DIR/export_presets.cfg"
+
+          if [ ! -f "$PRESET" ]; then
+            ls -la "$PROJECT_DIR" | tee -a "$LOG"
+            report_error "EXPORT PRESET MISSING" \
+              "export_presets.cfg is missing from $PROJECT_DIR"
+          fi
+
+          echo "Export presets:" | tee -a "$LOG"
+          cat "$PRESET" | tee -a "$LOG"
+
+          if ! grep -q 'name="Android"' "$PRESET"; then
+            report_error "ANDROID PRESET NOT FOUND" \
+              "No export preset named Android was found. Check export_presets.cfg."
+          fi
+
+          echo "4. Importing Godot project..." | tee -a "$LOG"
+
+          HOME=/root godot --headless --editor \
+            --path "$PROJECT_DIR" --quit \
+            > import.log 2>&1
+
+          IMPORT_STATUS=$?
+
+          cat import.log >> "$LOG"
+
+          if [ $IMPORT_STATUS -ne 0 ]; then
+            report_error "GODOT IMPORT FAILED" \
+              "Godot failed to import the project. See import.log in artifacts."
+          fi
+
+          echo "5. Exporting Android APK..." | tee -a "$LOG"
+
+          mkdir -p "$PROJECT_DIR/build/android"
+
+          HOME=/root godot --headless \
+            --path "$PROJECT_DIR" \
             --verbose \
-            --export-debug "Android" build/android/arena-4v4.apk \
+            --export-debug "Android" \
+            "$PROJECT_DIR/build/android/arena-4v4.apk" \
             > export.log 2>&1
 
-          STATUS=$?
+          EXPORT_STATUS=$?
 
-          echo "===== EXPORT LOG ====="
+          cat export.log >> "$LOG"
+
+          echo "===== LAST EXPORT LOG LINES ====="
           tail -n 100 export.log
 
-          if [ $STATUS -ne 0 ]; then
-            echo "Android export failed!"
-            exit $STATUS
+          if [ $EXPORT_STATUS -ne 0 ]; then
+            report_error "ANDROID EXPORT FAILED" \
+              "Godot export returned exit code $EXPORT_STATUS. Check export.log."
           fi
 
-          if [ ! -f build/android/arena-4v4.apk ]; then
-            echo "APK was not generated!"
-            exit 1
+          APK="$PROJECT_DIR/build/android/arena-4v4.apk"
+
+          if [ ! -s "$APK" ]; then
+            report_error "APK NOT GENERATED" \
+              "Godot completed but arena-4v4.apk is missing or empty."
           fi
 
-          echo "APK successfully generated!"
-          ls -lh build/android/arena-4v4.apk
+          echo "6. APK generated successfully!" | tee -a "$LOG"
+          ls -lh "$APK" | tee -a "$LOG"
 
-      - name: Upload Export Logs
+          {
+            echo "## ✅ ANDROID BUILD SUCCESSFUL"
+            echo ""
+            echo "**APK:** arena-4v4.apk"
+            echo ""
+            echo "APK generated successfully."
+          } >> "$SUMMARY"
+
+      - name: Upload Diagnostic Reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: export-log
-          path: export.log
+          name: android-build-diagnostics
+          path: |
+            build-report.log
+            import.log
+            export.log
           if-no-files-found: ignore
 
-      - name: Upload Android APK
+      - name: Upload APK
         if: success()
         uses: actions/upload-artifact@v4
         with:
           name: arena-4v4-apk
-          path: build/android/arena-4v4.apk
+          path: '**/build/android/arena-4v4.apk'
           if-no-files-found: error
