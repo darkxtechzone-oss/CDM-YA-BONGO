@@ -22,6 +22,11 @@ var running := false
 
 var _tracer_mat: SpatialMaterial
 var _spark_mat: SpatialMaterial
+const POOL := 24
+var _tracers := []
+var _sparks := []
+var _until := []
+var _pool_i := 0
 var _blue_names := ["Alpha", "Bravo", "Charlie"]
 var _red_names := ["Viper", "Raven", "Wolf", "Hawk"]
 
@@ -70,6 +75,7 @@ func _setup_world() -> void:
 	_spark_mat = SpatialMaterial.new()
 	_spark_mat.flags_unshaded = true
 	_spark_mat.albedo_color = Color(1.0, 0.7, 0.2)
+	_make_pools()
 
 
 # ---------------------------------------------------------------- match flow
@@ -101,6 +107,7 @@ func _make_fighter(script, team: int, fname: String, idx: int):
 
 
 func _process(delta: float) -> void:
+	_expire_effects()
 	if not running:
 		return
 	time_left -= delta
@@ -159,29 +166,51 @@ func _on_restart() -> void:
 
 
 # ---------------------------------------------------------------- effects
-func spawn_tracer(a: Vector3, b: Vector3) -> void:
-	var length := a.distance_to(b)
-	if length < 0.5:
-		return
-	var dir := (b - a) / length
-	var mi := MeshInstance.new()
+func _make_pools() -> void:
 	var cm := CubeMesh.new()
-	cm.size = Vector3(0.035, 0.035, length)
-	mi.mesh = cm
-	mi.material_override = _tracer_mat
-	add_child(mi)
-	var up := Vector3.UP if abs(dir.y) < 0.99 else Vector3.RIGHT
-	mi.global_transform = Transform(Basis.IDENTITY, (a + b) * 0.5).looking_at(b, up)
-	get_tree().create_timer(0.05).connect("timeout", mi, "queue_free")
-
-	var sp := MeshInstance.new()
+	cm.size = Vector3(1, 1, 1)
 	var sm := SphereMesh.new()
 	sm.radius = 0.09
 	sm.height = 0.18
 	sm.radial_segments = 6
 	sm.rings = 3
-	sp.mesh = sm
-	sp.material_override = _spark_mat
-	add_child(sp)
-	sp.translation = b
-	get_tree().create_timer(0.08).connect("timeout", sp, "queue_free")
+	for i in range(POOL):
+		var t := MeshInstance.new()
+		t.mesh = cm
+		t.material_override = _tracer_mat
+		t.visible = false
+		add_child(t)
+		_tracers.append(t)
+		var sp := MeshInstance.new()
+		sp.mesh = sm
+		sp.material_override = _spark_mat
+		sp.visible = false
+		add_child(sp)
+		_sparks.append(sp)
+		_until.append(0)
+
+
+func _expire_effects() -> void:
+	var now := OS.get_ticks_msec()
+	for i in range(POOL):
+		if _until[i] != 0 and now >= _until[i]:
+			_until[i] = 0
+			_tracers[i].visible = false
+			_sparks[i].visible = false
+
+
+func spawn_tracer(a: Vector3, b: Vector3) -> void:
+	var length := a.distance_to(b)
+	if length < 0.5:
+		return
+	var dir := (b - a) / length
+	var up := Vector3.UP if abs(dir.y) < 0.99 else Vector3.RIGHT
+	var i := _pool_i
+	_pool_i = (_pool_i + 1) % POOL
+	var t := Transform(Basis.IDENTITY, (a + b) * 0.5).looking_at(b, up)
+	t.basis = t.basis.scaled(Vector3(0.035, 0.035, length))
+	_tracers[i].transform = t
+	_tracers[i].visible = true
+	_sparks[i].translation = b
+	_sparks[i].visible = true
+	_until[i] = OS.get_ticks_msec() + 60
