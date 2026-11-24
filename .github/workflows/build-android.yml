@@ -9,24 +9,50 @@ jobs:
   export-android:
     name: Export APK
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     container:
       image: barichello/godot-ci:3.5.2
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Environment info
+      - name: Configure Android (SDK + debug keystore)
         run: |
           export HOME=/root
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT ANDROID_HOME=$ANDROID_HOME"
-          echo "--- editor settings ---"
-          cat /root/.config/godot/editor_settings-3.tres || echo "NO editor_settings-3.tres"
-          echo "--- templates ---"
-          ls /root/.local/share/godot/templates || echo "NO templates dir"
-          echo "--- tools ---"
-          which godot jarsigner java keytool || true
-          ls -la /root/debug.keystore || echo "NO /root/debug.keystore"
+          SDK="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          if [ -z "$SDK" ] || [ ! -d "$SDK" ]; then
+            for d in /usr/lib/android-sdk /opt/android-sdk /usr/local/lib/android/sdk /root/android-sdk /opt/android; do
+              if [ -d "$d" ]; then SDK="$d"; break; fi
+            done
+          fi
+          if [ -z "$SDK" ] || [ ! -d "$SDK" ]; then
+            P=$(find / -maxdepth 5 -type d -name platform-tools 2>/dev/null | head -n 1)
+            if [ -n "$P" ]; then SDK=$(dirname "$P"); fi
+          fi
+          echo "SDK=$SDK"
+          ls "$SDK" || true
+          ls "$SDK/build-tools" "$SDK/platforms" 2>/dev/null || true
+          JARSIGNER=$(which jarsigner)
+          echo "JARSIGNER=$JARSIGNER"
+          if [ ! -f /root/debug.keystore ]; then
+            keytool -keyalg RSA -genkeypair -alias androiddebugkey -keypass android -keystore /root/debug.keystore -storepass android -dname "CN=Android Debug,O=Android,C=US" -validity 9999 -deststoretype pkcs12
+          fi
+          mkdir -p /root/.config/godot
+          cat > /root/.config/godot/editor_settings-3.tres <<EOT
+          [gd_resource type="EditorSettings" format=2]
+
+          [resource]
+
+          export/android/android_sdk_path = "$SDK"
+          export/android/debug_keystore = "/root/debug.keystore"
+          export/android/debug_keystore_user = "androiddebugkey"
+          export/android/debug_keystore_pass = "android"
+          export/android/jarsigner = "$JARSIGNER"
+          export/android/adb = "$SDK/platform-tools/adb"
+          export/android/force_system_user = false
+          export/android/shutdown_adb_on_exit = true
+          EOT
+          cat /root/.config/godot/editor_settings-3.tres
 
       - name: Export debug APK
         run: |
