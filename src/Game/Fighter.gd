@@ -7,6 +7,7 @@ const MannequinScene = preload("res://src/Player/Mannequiny.tscn")
 const GRAVITY := -32.0
 const JUMP_SPEED := 9.5
 const MAX_HP := 100.0
+const ANIM_STEP := 0.05  # animation updated at 20 Hz (saves CPU)
 
 var game          # Main node
 var team := 0     # 0 = blue (player team), 1 = red
@@ -22,6 +23,7 @@ var _shape: CollisionShape
 var _marker: MeshInstance
 var _anim_state := -1
 var show_marker := true
+var _anim_acc := 0.0
 
 # Movement (set by subclasses in think())
 var move_speed := 7.0
@@ -59,6 +61,8 @@ func _ready() -> void:
 	skin.rotation_degrees = Vector3(0, 180, 0)
 	skin.translation = Vector3(0, 0, 0.222992)
 	add_child(skin)
+	skin.animation_tree.process_mode = AnimationTree.ANIMATION_PROCESS_MANUAL
+	_anim_acc = randf() * ANIM_STEP
 	_tint_skin()
 
 	_marker = MeshInstance.new()
@@ -133,7 +137,7 @@ func _physics_process(delta: float) -> void:
 
 	think(delta)
 	_move(delta)
-	_animate()
+	_animate(delta)
 
 
 func _move(delta: float) -> void:
@@ -149,7 +153,7 @@ func _move(delta: float) -> void:
 	velocity = move_and_slide(velocity, Vector3.UP, true)
 
 
-func _animate() -> void:
+func _animate(delta: float) -> void:
 	var h := Vector3(velocity.x, 0.0, velocity.z)
 	var st: int = skin.States.IDLE
 	if not is_on_floor():
@@ -161,6 +165,10 @@ func _animate() -> void:
 		_anim_state = st
 		skin.is_moving = (st == skin.States.RUN)
 		skin.transition_to(st)
+	_anim_acc += delta
+	if _anim_acc >= ANIM_STEP:
+		skin.animation_tree.advance(_anim_acc)
+		_anim_acc = 0.0
 
 
 # ---- weapon ----------------------------------------------------------------
