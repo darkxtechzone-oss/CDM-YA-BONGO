@@ -1,6 +1,5 @@
 extends "res://src/Game/Fighter.gd"
-# Simple AI: finds the nearest visible enemy, strafes and shoots in bursts,
-# otherwise wanders between waypoints. Uses raycasts for obstacle avoidance.
+# Weakened AI: slow reactions, short bursts, real misses (projectiles + aim error).
 
 var skill := 1.0
 var target = null
@@ -11,8 +10,9 @@ var _reaction := 0.0
 var _think_timer := 0.0
 var _strafe_dir := 1.0
 var _strafe_timer := 0.0
-var _burst_left := 6
+var _burst_left := 4
 var _pause := 0.0
+var _aim_err := Vector3.ZERO
 var _waypoint := Vector3.ZERO
 var _avoid_timer := 0.0
 var _avoid_dir := 1.0
@@ -22,13 +22,20 @@ var _last_pos := Vector3.ZERO
 
 func setup() -> void:
 	skill = game.bot_skill
-	move_speed = rand_range(5.0, 6.2)
-	damage = 8.0 + 3.0 * skill
-	fire_interval = 0.13
-	spread = 0.07 / skill
+	move_speed = rand_range(4.6, 5.8)
+	damage = 5.0 + 2.0 * skill
+	fire_interval = 0.2
+	spread = 0.05 / skill
+	bullet_speed = 55.0 + 15.0 * skill
 	_think_timer = randf() * 0.3
+	_new_aim_err()
 	_pick_waypoint()
 	_last_pos = global_transform.origin
+
+
+func _new_aim_err() -> void:
+	var m: float = 1.2 / skill
+	_aim_err = Vector3(rand_range(-m, m), rand_range(-0.4, 0.4), rand_range(-m, m))
 
 
 func on_respawned() -> void:
@@ -42,6 +49,8 @@ func on_damaged(attacker) -> void:
 	if attacker != null and attacker.alive:
 		last_known = attacker.global_transform.origin
 		_chase_time = 4.0
+	if randf() < 0.1:
+		start_slide()
 
 
 func think(delta: float) -> void:
@@ -53,7 +62,6 @@ func think(delta: float) -> void:
 		_chase_time -= delta
 
 	var pos := global_transform.origin
-	var eye := pos + Vector3(0, 1.5, 0)
 	var move := Vector3.ZERO
 	var face := Vector3.ZERO
 
@@ -77,18 +85,23 @@ func think(delta: float) -> void:
 			move += flat * 0.8
 		elif dist < 7.0:
 			move -= flat * 0.6
+		gun_pitch = atan2((tpos.y + 1.2) - (pos.y + 1.12), max(dist, 1.0))
 
 		_reaction -= delta
 		_pause -= delta
 		var yaw_err: float = abs(wrapf(_yaw_for(flat) - rotation.y, -PI, PI))
-		if _reaction <= 0.0 and _pause <= 0.0 and yaw_err < 0.3 and can_fire():
-			var aim := tpos + Vector3(0, rand_range(0.9, 1.5), 0)
-			fire_at(eye, (aim - eye).normalized(), muzzle_position())
+		if _reaction <= 0.0 and _pause <= 0.0 and yaw_err < 0.3 and dist < 45.0 and can_fire():
+			var aim: Vector3 = tpos + Vector3(0, 1.2, 0) + _aim_err
+			if skill > 1.0:
+				aim += target.velocity * (dist / bullet_speed) * 0.5
+			fire_toward(aim, muzzle_position())
 			_burst_left -= 1
 			if _burst_left <= 0:
-				_burst_left = randi() % 6 + 5
-				_pause = rand_range(0.3, 0.9) / skill
+				_burst_left = randi() % 4 + 3
+				_pause = rand_range(0.7, 1.5) / skill
+				_new_aim_err()
 	else:
+		gun_pitch = 0.0
 		var dest := _waypoint
 		if _chase_time > 0.0:
 			dest = last_known
@@ -172,14 +185,14 @@ func _acquire_target() -> void:
 			continue
 		var fpos: Vector3 = f.global_transform.origin
 		var d := pos.distance_to(fpos)
-		if d > 60.0 or d >= best_d:
+		if d > 55.0 or d >= best_d:
 			continue
 		if not _ray_blocked(eye, ((fpos + Vector3(0, 1.2, 0)) - eye).normalized(), d):
 			best = f
 			best_d = d
 	if best != null:
 		if best != target or not target_visible:
-			_reaction = rand_range(0.25, 0.6) / skill
+			_reaction = rand_range(0.5, 1.0) / skill
 		target = best
 		target_visible = true
 		last_known = best.global_transform.origin
