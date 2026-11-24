@@ -1,0 +1,4 @@
+.import/
+*.apk
+build/
+.mono/
