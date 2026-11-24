@@ -61,7 +61,8 @@ func think(delta: float) -> void:
 		var t := cam.global_transform
 		var dir := -t.basis.z
 		var p0 := pivot.global_transform.origin
-		var origin := t.origin + dir * max(0.0, (p0 - t.origin).dot(dir))
+		var along: float = max(0.0, (p0 - t.origin).dot(dir))
+		var origin: Vector3 = t.origin + dir * along
 		spread = 0.006 + 0.012 * min(1.0, Vector3(velocity.x, 0, velocity.z).length() / move_speed)
 		if can_fire():
 			fire_at(origin, dir, muzzle_position())
@@ -70,7 +71,7 @@ func think(delta: float) -> void:
 
 func _update_camera() -> void:
 	var from := pivot.global_transform.origin
-	var to := pivot.global_transform.xform(CAM_OFFSET)
+	var to: Vector3 = pivot.global_transform.xform(CAM_OFFSET)
 	var hit := get_world().direct_space_state.intersect_ray(from, to, [self], 1)
 	if hit:
 		to = hit.position + (from - hit.position).normalized() * 0.25
