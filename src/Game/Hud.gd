@@ -7,9 +7,15 @@ signal restart_requested
 
 const FONT_PATH := "res://assets/fonts/Montserrat-Bold.ttf"
 const STICK_RADIUS := 90.0
+const SAVE_PATH := "user://settings.cfg"
 
 var player = null
 var active := false
+
+# settings (saved on close)
+var sens := 1.0
+var assist := 0.6
+var smooth := 0.4
 
 # state read by the player
 var move_vec := Vector2.ZERO
@@ -17,6 +23,7 @@ var fire_held := false
 var _look_accum := Vector2.ZERO
 var _jump := false
 var _reload := false
+var _slide := false
 
 var _move_touch := -1
 var _look_touch := -1
@@ -30,6 +37,9 @@ var _jump_c := Vector2.ZERO
 var _jump_r := 46.0
 var _reload_c := Vector2.ZERO
 var _reload_r := 40.0
+var _slide_c := Vector2.ZERO
+var _slide_r := 38.0
+var _gear_c := Vector2.ZERO
 
 var _f_small: DynamicFont
 var _f_mid: DynamicFont
@@ -46,15 +56,22 @@ var _menu: ColorRect
 var _end: ColorRect
 var _end_title: Label
 var _end_sub: Label
+var _settings: ColorRect
+var _sens_lbl: Label
+var _assist_lbl: Label
+var _smooth_lbl: Label
 
 
 func _ready() -> void:
+	pause_mode = Node.PAUSE_MODE_PROCESS
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_load_settings()
 	_f_small = _make_font(22)
 	_f_mid = _make_font(30)
 	_f_big = _make_font(64)
 	_build_menu()
 	_build_end()
+	_build_settings()
 
 
 func _make_font(size: int) -> DynamicFont:
@@ -110,6 +127,9 @@ func _build_menu() -> void:
 		var b := _button(names[i])
 		b.connect("pressed", self, "_on_start", [skills[i]])
 		vb.add_child(b)
+	var sb := _button("SETTINGS")
+	sb.connect("pressed", self, "_open_settings")
+	vb.add_child(sb)
 
 
 func _build_end() -> void:
@@ -131,6 +151,107 @@ func _build_end() -> void:
 	vb.add_child(b)
 
 
+func _load_settings() -> void:
+	var cf := ConfigFile.new()
+	if cf.load(SAVE_PATH) == OK:
+		sens = cf.get_value("controls", "sens", 1.0)
+		assist = cf.get_value("controls", "assist", 0.6)
+		smooth = cf.get_value("controls", "smooth", 0.4)
+
+
+func _save_settings() -> void:
+	var cf := ConfigFile.new()
+	cf.set_value("controls", "sens", sens)
+	cf.set_value("controls", "assist", assist)
+	cf.set_value("controls", "smooth", smooth)
+	cf.save(SAVE_PATH)
+
+
+func _slider(lo: float, hi: float, step: float, val: float) -> HSlider:
+	var sl := HSlider.new()
+	sl.min_value = lo
+	sl.max_value = hi
+	sl.step = step
+	sl.value = val
+	sl.rect_min_size = Vector2(460, 48)
+	return sl
+
+
+func _build_settings() -> void:
+	_settings = _overlay()
+	_settings.color = Color(0, 0, 0, 0.88)
+	_settings.visible = false
+	var cc := CenterContainer.new()
+	cc.anchor_right = 1.0
+	cc.anchor_bottom = 1.0
+	_settings.add_child(cc)
+	var vb := VBoxContainer.new()
+	vb.add_constant_override("separation", 10)
+	cc.add_child(vb)
+	vb.add_child(_label("SETTINGS", _f_mid, Color(1, 0.85, 0.3)))
+
+	_sens_lbl = _label("", _f_small)
+	vb.add_child(_sens_lbl)
+	var s1 := _slider(0.3, 2.5, 0.05, sens)
+	s1.connect("value_changed", self, "_on_sens")
+	vb.add_child(s1)
+
+	_assist_lbl = _label("", _f_small)
+	vb.add_child(_assist_lbl)
+	var s2 := _slider(0.0, 1.0, 0.05, assist)
+	s2.connect("value_changed", self, "_on_assist")
+	vb.add_child(s2)
+
+	_smooth_lbl = _label("", _f_small)
+	vb.add_child(_smooth_lbl)
+	var s3 := _slider(0.0, 1.0, 0.05, smooth)
+	s3.connect("value_changed", self, "_on_smooth")
+	vb.add_child(s3)
+
+	var close := _button("CLOSE")
+	close.connect("pressed", self, "_close_settings")
+	vb.add_child(close)
+	_update_labels()
+
+
+func _update_labels() -> void:
+	_sens_lbl.text = "Look sensitivity: %.2f" % sens
+	_assist_lbl.text = "Aim assist (head): %d%%" % int(assist * 100.0)
+	_smooth_lbl.text = "Camera smoothing: %d%%" % int(smooth * 100.0)
+
+
+func _on_sens(v: float) -> void:
+	sens = v
+	_update_labels()
+
+
+func _on_assist(v: float) -> void:
+	assist = v
+	_update_labels()
+
+
+func _on_smooth(v: float) -> void:
+	smooth = v
+	_update_labels()
+
+
+func _open_settings() -> void:
+	_settings.visible = true
+	fire_held = false
+	_fire_touch = -1
+	_move_touch = -1
+	_look_touch = -1
+	move_vec = Vector2.ZERO
+	if active:
+		get_tree().paused = true
+
+
+func _close_settings() -> void:
+	_settings.visible = false
+	get_tree().paused = false
+	_save_settings()
+
+
 func _on_start(skill: float) -> void:
 	_menu.visible = false
 	emit_signal("start_requested", skill)
@@ -147,6 +268,7 @@ func begin_match(p) -> void:
 
 func show_end(title: String, sub: String) -> void:
 	active = false
+	get_tree().paused = false
 	fire_held = false
 	move_vec = Vector2.ZERO
 	_move_touch = -1
@@ -190,6 +312,12 @@ func consume_jump() -> bool:
 	return j
 
 
+func consume_slide() -> bool:
+	var sl := _slide
+	_slide = false
+	return sl
+
+
 func consume_reload() -> bool:
 	var r := _reload
 	_reload = false
@@ -198,7 +326,7 @@ func consume_reload() -> bool:
 
 # ---------------------------------------------------------------- input
 func _input(event: InputEvent) -> void:
-	if not active:
+	if not active or _settings.visible:
 		return
 	if event is InputEventScreenTouch:
 		if event.pressed:
@@ -211,6 +339,9 @@ func _input(event: InputEvent) -> void:
 
 func _touch_down(i: int, p: Vector2) -> void:
 	var s := rect_size
+	if p.distance_to(_gear_c) <= 42.0:
+		_open_settings()
+		return
 	if p.distance_to(_fire_c) <= _fire_r * 1.15:
 		_fire_touch = i
 		fire_held = true
@@ -218,6 +349,8 @@ func _touch_down(i: int, p: Vector2) -> void:
 		_jump = true
 	elif p.distance_to(_reload_c) <= _reload_r * 1.25:
 		_reload = true
+	elif p.distance_to(_slide_c) <= _slide_r * 1.25:
+		_slide = true
 	elif p.x < s.x * 0.4:
 		if _move_touch == -1:
 			_move_touch = i
@@ -258,6 +391,8 @@ func _process(delta: float) -> void:
 	_fire_c = Vector2(s.x - 150, s.y - 170)
 	_jump_c = Vector2(s.x - 300, s.y - 90)
 	_reload_c = Vector2(s.x - 300, s.y - 215)
+	_slide_c = Vector2(s.x - 150, s.y - 320)
+	_gear_c = Vector2(s.x - 50, 95)
 	_stick_rest = Vector2(170, s.y - 170)
 	_hit_flash = max(0.0, _hit_flash - delta)
 	_dmg_flash = max(0.0, _dmg_flash - delta * 2.0)
@@ -314,6 +449,10 @@ func _draw() -> void:
 	_circle_button(_fire_c, _fire_r, "FIRE", fire_held)
 	_circle_button(_jump_c, _jump_r, "JUMP", false)
 	_circle_button(_reload_c, _reload_r, "R", false)
+	_circle_button(_slide_c, _slide_r, "SLIDE", false)
+	_circle_button(_gear_c, 26.0, "SET", false)
+
+	_text(_f_small, Vector2(s.x - 110, 30), "%d FPS" % Engine.get_frames_per_second(), Color(0.7, 1, 0.7))
 
 	# score + timer
 	var secs := int(max(0.0, _time_left))
