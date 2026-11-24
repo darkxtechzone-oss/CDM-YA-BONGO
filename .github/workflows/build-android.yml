@@ -1,31 +1,79 @@
+
 name: Build Android APK
 
 on:
   push:
-    branches: [main, master]
+    branches:
+      - main
+      - master
   workflow_dispatch:
 
 jobs:
   export-android:
-    name: Export APK
+    name: Export Android APK
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+
     container:
       image: barichello/godot-ci:3.5.2
+
     steps:
-      - name: Checkout
+      - name: Checkout Project
         uses: actions/checkout@v4
 
-      - name: Import resources
-        run: HOME=/root timeout 600 godot -v --editor --quit || true
-
-      - name: Export debug APK
+      - name: Check Project Files
         run: |
-          mkdir -v -p build/android
-          HOME=/root godot -v --export-debug "Android" build/android/arena-4v4.apk
-          ls -la build/android
+          echo "Checking Godot project..."
+          test -f project.godot
+          test -f export_presets.cfg
+          godot --version
 
-      - name: Upload APK
+      - name: Import Project
+        run: |
+          mkdir -p build/android
+          HOME=/root godot --headless --editor --path . --quit
+
+      - name: Export Android APK
+        run: |
+          set +e
+
+          HOME=/root godot \
+            --headless \
+            --path . \
+            --verbose \
+            --export-debug "Android" build/android/arena-4v4.apk \
+            > export.log 2>&1
+
+          STATUS=$?
+
+          echo "===== EXPORT LOG ====="
+          tail -n 100 export.log
+
+          if [ $STATUS -ne 0 ]; then
+            echo "Android export failed!"
+            exit $STATUS
+          fi
+
+          if [ ! -f build/android/arena-4v4.apk ]; then
+            echo "APK was not generated!"
+            exit 1
+          fi
+
+          echo "APK successfully generated!"
+          ls -lh build/android/arena-4v4.apk
+
+      - name: Upload Export Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: export-log
+          path: export.log
+          if-no-files-found: ignore
+
+      - name: Upload Android APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: arena-4v4-apk
           path: build/android/arena-4v4.apk
+          if-no-files-found: error
