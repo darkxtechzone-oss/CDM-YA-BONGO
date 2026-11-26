@@ -3,9 +3,14 @@ config_version=4
 
 [application]
 
-config/name="Arena 4v4"
+config/name="CDM YA BONGO"
 run/main_scene="res://src/Main/Main.tscn"
 config/icon="res://icon.png"
+
+[autoload]
+
+Sfx="*res://src/Game/Sfx.gd"
+Net="*res://src/Game/Net.gd"
 
 [display]
 
@@ -45,6 +50,16 @@ jump={
 reload={
 "deadzone": 0.5,
 "events": [ Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":0,"alt":false,"shift":false,"control":false,"meta":false,"command":false,"pressed":false,"scancode":82,"unicode":0,"echo":false,"script":null)
+ ]
+}
+crouch={
+"deadzone": 0.5,
+"events": [ Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":0,"alt":false,"shift":false,"control":false,"meta":false,"command":false,"pressed":false,"scancode":67,"unicode":0,"echo":false,"script":null)
+ ]
+}
+prone={
+"deadzone": 0.5,
+"events": [ Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":0,"alt":false,"shift":false,"control":false,"meta":false,"command":false,"pressed":false,"scancode":90,"unicode":0,"echo":false,"script":null)
  ]
 }
 
