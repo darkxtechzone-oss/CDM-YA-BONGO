@@ -1,10 +1,11 @@
 extends "res://src/Game/Fighter.gd"
-# The player: third-person over-the-shoulder camera, touch controls from the HUD,
-# smooth look, adjustable sensitivity and head-seeking aim assist.
+# The player: third-person camera, touch controls from the HUD, aim assist,
+# stances (stand / crouch / lie down) and weapon switching.
 
 const SENS := 0.0035
 const CAM_OFFSET = Vector3(0.75, 0.25, 3.3)
 const ASSIST_RANGE := 70.0
+const PIVOT_Y := [1.55, 1.05, 0.65]
 
 var hud
 var cam: Camera
@@ -16,10 +17,8 @@ var _pivot_y := 1.55
 
 
 func setup() -> void:
+	is_local = true
 	move_speed = 7.5
-	damage = 22.0
-	fire_interval = 0.1
-	bullet_speed = 170.0
 	yaw = rotation.y
 	show_marker = false
 	_marker.visible = false
@@ -37,7 +36,7 @@ func setup() -> void:
 
 
 func think(delta: float) -> void:
-	# --- look: smoothed + sensitivity from settings ---
+	# --- look ---
 	var raw: Vector2 = hud.consume_look()
 	var a: float = lerp(1.0, 0.18, hud.smooth)
 	_look_s += (raw - _look_s) * a
@@ -45,9 +44,9 @@ func think(delta: float) -> void:
 	yaw -= _look_s.x * k
 	pitch = clamp(pitch - _look_s.y * k, -1.0, 1.0)
 
-	# --- aim assist: pull the crosshair toward the nearest enemy head ---
+	# --- aim assist ---
 	var head_target = null
-	if hud.assist > 0.0:
+	if hud.assist > 0.0 and cur != "" and cur != "grenade":
 		head_target = _assist_target()
 	if head_target != null:
 		var v: Vector3 = head_target - cam.global_transform.origin
@@ -76,11 +75,17 @@ func think(delta: float) -> void:
 		want_jump = true
 	if hud.consume_slide():
 		start_slide()
+	if hud.consume_crouch() or Input.is_action_just_pressed("crouch"):
+		set_stance(Stance.STAND if stance == Stance.CROUCH else Stance.CROUCH)
+	if hud.consume_prone() or Input.is_action_just_pressed("prone"):
+		set_stance(Stance.STAND if stance == Stance.PRONE else Stance.PRONE)
+	var slot: String = hud.consume_slot()
+	if slot != "":
+		select_weapon(slot)
 	if hud.consume_reload() or Input.is_action_just_pressed("reload"):
 		start_reload()
 
-	var target_y: float = 0.95 if sliding else 1.55
-	_pivot_y = lerp(_pivot_y, target_y, clamp(10.0 * delta, 0.0, 1.0))
+	_pivot_y = lerp(_pivot_y, PIVOT_Y[current_pose()], clamp(10.0 * delta, 0.0, 1.0))
 	pivot.translation = Vector3(0, _pivot_y, 0)
 	_update_camera()
 
@@ -98,9 +103,12 @@ func think(delta: float) -> void:
 			aim = hit.position
 		if head_target != null:
 			aim = aim.linear_interpolate(head_target, hud.assist * 0.8)
-		spread = 0.004 + 0.010 * min(1.0, Vector3(velocity.x, 0, velocity.z).length() / move_speed)
+		extra_spread = 0.010 * min(1.0, Vector3(velocity.x, 0, velocity.z).length() / move_speed)
 		fire_toward(aim, muzzle_position())
-		pitch = min(1.0, pitch + 0.003)
+		if cur == "rifle" or cur == "pistol":
+			pitch = min(1.0, pitch + 0.003)
+	elif hud.fire_held and cur != "" and not is_reloading() and inv[cur]["ammo"] <= 0 and _cooldown <= 0.0:
+		fire_toward(cam.global_transform.origin - cam.global_transform.basis.z * 50.0, muzzle_position())
 
 
 func _assist_target():
@@ -109,7 +117,7 @@ func _assist_target():
 	var best = null
 	var best_ang: float = deg2rad(5.0 + 4.0 * hud.assist)
 	for f in get_tree().get_nodes_in_group("fighters"):
-		if f.team == team or not f.alive:
+		if f == self or f.team == team or not f.alive:
 			continue
 		var head: Vector3 = f.head_position()
 		var to: Vector3 = head - t.origin

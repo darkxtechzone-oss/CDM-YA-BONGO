@@ -1,5 +1,6 @@
 extends "res://src/Game/Fighter.gd"
 # Weakened AI: slow reactions, short bursts, real misses (projectiles + aim error).
+# In battle royale bots also loot weapons and run to the safe zone.
 
 var skill := 1.0
 var target = null
@@ -18,15 +19,18 @@ var _avoid_timer := 0.0
 var _avoid_dir := 1.0
 var _stuck_timer := 0.0
 var _last_pos := Vector3.ZERO
+var _loot_timer := 0.0
+var _loot_pos := Vector3.ZERO
+var _loot_has := false
+var _loot_skip := []
 
 
 func setup() -> void:
 	skill = game.bot_skill
 	move_speed = rand_range(4.6, 5.8)
-	damage = 5.0 + 2.0 * skill
-	fire_interval = 0.2
-	spread = 0.05 / skill
-	bullet_speed = 55.0 + 15.0 * skill
+	damage_mul = 0.25 + 0.07 * skill
+	extra_spread = 0.03 / skill
+	speed_mul = 0.30 + 0.08 * skill
 	_think_timer = randf() * 0.3
 	_new_aim_err()
 	_pick_waypoint()
@@ -49,7 +53,7 @@ func on_damaged(attacker) -> void:
 	if attacker != null and attacker.alive:
 		last_known = attacker.global_transform.origin
 		_chase_time = 4.0
-	if randf() < 0.1:
+	if randf() < 0.1 and stance == Stance.STAND:
 		start_slide()
 
 
@@ -90,10 +94,12 @@ func think(delta: float) -> void:
 		_reaction -= delta
 		_pause -= delta
 		var yaw_err: float = abs(wrapf(_yaw_for(flat) - rotation.y, -PI, PI))
-		if _reaction <= 0.0 and _pause <= 0.0 and yaw_err < 0.3 and dist < 45.0 and can_fire():
+		if _reaction <= 0.0 and _pause <= 0.0 and yaw_err < 0.3 and dist < _weapon_range() and can_fire():
 			var aim: Vector3 = tpos + Vector3(0, 1.2, 0) + _aim_err
 			if skill > 1.0:
-				aim += target.velocity * (dist / bullet_speed) * 0.5
+				aim += target.velocity * (dist / 60.0) * 0.5
+			if cur == "grenade":
+				aim += Vector3(0, dist * 0.12, 0)
 			fire_toward(aim, muzzle_position())
 			_burst_left -= 1
 			if _burst_left <= 0:
@@ -105,6 +111,21 @@ func think(delta: float) -> void:
 		var dest := _waypoint
 		if _chase_time > 0.0:
 			dest = last_known
+		if game.mode != game.MODE_TDM:
+			_loot_timer -= delta
+			if not game.in_zone(pos, 4.0):
+				dest = game.zone_center()
+				_chase_time = 0.0
+			elif cur == "" or (_loot_timer <= 0.0 and randf() < 0.6):
+				if _loot_timer <= 0.0:
+					_loot_timer = 1.5
+					var p = game.nearest_pickup(pos, 70.0 if cur == "" else 30.0, _loot_skip)
+					_loot_pos = p if p != null else Vector3.ZERO
+					_loot_has = p != null
+				if _loot_has:
+					dest = _loot_pos
+					if pos.distance_to(_loot_pos) < 2.0:
+						_loot_has = false
 		var to_d := dest - pos
 		to_d.y = 0.0
 		if to_d.length() < 2.0:
@@ -113,7 +134,7 @@ func think(delta: float) -> void:
 		else:
 			move = to_d.normalized()
 			face = move
-		if ammo < mag_size / 2:
+		if cur != "" and cur != "grenade" and inv[cur]["ammo"] < 3:
 			start_reload()
 
 	if move.length() > 0.1:
@@ -130,6 +151,9 @@ func think(delta: float) -> void:
 	if _stuck_timer > 1.0:
 		_stuck_timer = 0.0
 		if move.length() > 0.3 and pos.distance_to(_last_pos) < 0.6:
+			if _loot_has:
+				_loot_skip.append(_loot_pos)
+				_loot_has = false
 			_pick_waypoint()
 			_avoid_timer = 0.8
 			_avoid_dir = 1.0 if randf() < 0.5 else -1.0
@@ -171,8 +195,26 @@ func _avoid(move: Vector3, pos: Vector3, delta: float) -> Vector3:
 	return move
 
 
+func _weapon_range() -> float:
+	match cur:
+		"pistol":
+			return 32.0
+		"rifle":
+			return 55.0
+		"rpg":
+			return 50.0
+		"grenade":
+			return 22.0
+	return 45.0
+
+
 func _pick_waypoint() -> void:
 	_waypoint = game.arena.random_waypoint()
+	if game.mode != game.MODE_TDM:
+		for i in range(8):
+			if game.in_zone(_waypoint, 0.0):
+				break
+			_waypoint = game.arena.random_waypoint()
 
 
 func _acquire_target() -> void:
