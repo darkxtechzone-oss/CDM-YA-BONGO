@@ -356,7 +356,7 @@ func zone_center() -> Vector3:
 func _zone_damage() -> void:
 	var dps: float = _zs["dps"]
 	for f in get_tree().get_nodes_in_group("fighters"):
-		if not f.alive or f.puppet:
+		if not f.alive or f.is_puppet:
 			continue
 		if not in_zone(f.global_transform.origin, 0.0):
 			f.take_damage(dps, null, false)
@@ -455,7 +455,7 @@ func nearest_pickup(pos: Vector3, maxd: float, skip: Array):
 
 func _check_pickups() -> void:
 	for f in get_tree().get_nodes_in_group("fighters"):
-		if not f.alive or f.puppet:
+		if not f.alive or f.is_puppet:
 			continue
 		var fp: Vector3 = f.global_transform.origin
 		for i in range(pickups.size()):
@@ -809,7 +809,7 @@ func _bullet_hit(b, hit: Dictionary) -> void:
 	var c = hit.collider
 	if c != null and c.has_method("take_damage"):
 		var head: bool = c.is_head(hit.position.y)
-		if c.puppet:
+		if c.is_puppet:
 			if b["who"] == player:
 				hud.hit_marker(false, head)
 				Sfx.play_ui("hit_headshot" if head else "hit_enemy")
@@ -932,7 +932,7 @@ func _explode(pos: Vector3, radius: float, dmg: float, who) -> void:
 	_fx.append({"mi": mi, "t": 0.0, "r": radius * 0.6, "m": m})
 	var space := get_viewport().world.direct_space_state
 	for f in get_tree().get_nodes_in_group("fighters"):
-		if not f.alive or f.puppet:
+		if not f.alive or f.is_puppet:
 			continue
 		var tp: Vector3 = f.global_transform.origin + Vector3(0, 0.8, 0)
 		var dist: float = pos.distance_to(tp)
