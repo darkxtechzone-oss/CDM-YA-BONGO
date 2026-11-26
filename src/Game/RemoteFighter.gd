@@ -8,7 +8,7 @@ var _have := false
 
 
 func setup() -> void:
-	puppet = true
+	is_puppet = true
 	show_marker = false
 	_marker.visible = false
 	tgt_pos = translation

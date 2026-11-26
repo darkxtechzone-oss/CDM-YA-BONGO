@@ -35,7 +35,7 @@ var team := 0
 var display_name := "Fighter"
 var char_name := "Mannequin"
 var net_id := 0
-var puppet := false        # online remote player (visual only)
+var is_puppet := false        # online remote player (visual only)
 var is_local := false
 
 var hp := MAX_HP
@@ -288,7 +288,7 @@ func _physics_process(delta: float) -> void:
 		_update_models()
 
 	_since_hit += delta
-	if hp < MAX_HP and _since_hit > 4.0 and not puppet:
+	if hp < MAX_HP and _since_hit > 4.0 and not is_puppet:
 		hp = min(MAX_HP, hp + 15.0 * delta)
 
 	_cooldown = max(0.0, _cooldown - delta)
@@ -346,7 +346,7 @@ func _move(delta: float) -> void:
 
 
 func _footsteps(delta: float) -> void:
-	var grounded: bool = puppet or is_on_floor()
+	var grounded: bool = is_puppet or is_on_floor()
 	var h := Vector3(velocity.x, 0.0, velocity.z).length()
 	if sliding or not grounded or h < 1.0:
 		return
@@ -359,7 +359,7 @@ func _footsteps(delta: float) -> void:
 
 
 func _animate(delta: float) -> void:
-	var grounded: bool = puppet or is_on_floor()
+	var grounded: bool = is_puppet or is_on_floor()
 	var h := Vector3(velocity.x, 0.0, velocity.z)
 	var st := 0   # 0 idle, 1 run, 2 air
 	if not grounded:
@@ -654,7 +654,7 @@ func muzzle_position() -> Vector3:
 
 # ---------------------------------------------------------------- health
 func take_damage(amount: float, attacker, headshot := false) -> void:
-	if puppet or not alive or invuln > 0.0:
+	if is_puppet or not alive or invuln > 0.0:
 		return
 	if attacker != null and attacker != self and attacker.team == team:
 		return
