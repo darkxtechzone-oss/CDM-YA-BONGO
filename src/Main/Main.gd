@@ -241,7 +241,7 @@ func _build_br(seed_v: int) -> void:
 
 
 func _random_char() -> String:
-	var l := CharLib.list()
+	var l: Array = CharLib.list()
 	return l[randi() % l.size()]
 
 
@@ -867,7 +867,7 @@ func throw_grenade(who, pos: Vector3, dir: Vector3, wname: String) -> void:
 	})
 
 
-func _step_projectiles(delta: float, space) -> void:
+func _step_projectiles(delta: float, space: PhysicsDirectSpaceState) -> void:
 	var i := _projs.size() - 1
 	while i >= 0:
 		var p = _projs[i]
@@ -877,7 +877,7 @@ func _step_projectiles(delta: float, space) -> void:
 		if p["type"] == "rocket":
 			var step: float = vel.length() * delta
 			var to: Vector3 = from + vel * delta
-			var hit := space.intersect_ray(from, to, [p["who"]], 3)
+			var hit: Dictionary = space.intersect_ray(from, to, [p["who"]], 3)
 			if hit:
 				_explode(hit.position + hit.normal * 0.1, p["radius"], p["dmg"], p["who"])
 				done = true
@@ -893,7 +893,7 @@ func _step_projectiles(delta: float, space) -> void:
 			p["fuse"] -= delta
 			vel.y += GRENADE_GRAVITY * delta
 			var to2: Vector3 = from + vel * delta
-			var hit2 := space.intersect_ray(from, to2, [], 1)
+			var hit2: Dictionary = space.intersect_ray(from, to2, [], 1)
 			if hit2:
 				vel = vel.bounce(hit2.normal) * 0.45
 				p["pos"] = hit2.position + hit2.normal * 0.12
