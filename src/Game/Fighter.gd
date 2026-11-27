@@ -326,7 +326,7 @@ func _move(delta: float) -> void:
 		if _slide_t <= 0.0 or want_jump:
 			_end_slide()
 	else:
-		var target := wish_dir * move_speed * STANCE_SPEED[stance]
+		var target: Vector3 = wish_dir * move_speed * STANCE_SPEED[stance]
 		var k: float = clamp(12.0 * delta, 0.0, 1.0)
 		velocity.x = lerp(velocity.x, target.x, k)
 		velocity.z = lerp(velocity.z, target.z, k)
